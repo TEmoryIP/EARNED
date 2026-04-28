@@ -33,6 +33,12 @@ export default function EarnedCalculator() {
   const [otherFees, setOtherFees] = useState('0');
   const [otherFeesType, setOtherFeesType] = useState('flat');
   
+  // Referral fees
+  const [referralFeeOut, setReferralFeeOut] = useState('0');
+  const [referralFeeOutType, setReferralFeeOutType] = useState('percent');
+  const [referralFeeIn, setReferralFeeIn] = useState('0');
+  const [referralFeeInType, setReferralFeeInType] = useState('percent');
+  
   // Saved brokerage profiles
   const [profiles, setProfiles] = useState([
     { 
@@ -59,12 +65,12 @@ export default function EarnedCalculator() {
   
   // Allocation percentages - now customizable!
   const [allocations, setAllocations] = useState([
-    { id: 1, name: 'Owner Pay (Take Home)', percentage: 30, color: 'bg-green-500', icon: '💰' },
+    { id: 1, name: 'Owner Pay (Take Home)', percentage: 50, color: 'bg-green-500', icon: '💰' },
     { id: 2, name: 'Tax Reserve', percentage: 25, color: 'bg-red-500', icon: '🧾' },
-    { id: 3, name: 'Operating Expenses', percentage: 15, color: 'bg-blue-500', icon: '💼' },
-    { id: 4, name: 'Brokerage Fund', percentage: 10, color: 'bg-purple-500', icon: '🏢' },
-    { id: 5, name: 'Home Build/Investment', percentage: 10, color: 'bg-orange-500', icon: '🏠' },
-    { id: 6, name: 'Profit/Savings', percentage: 10, color: 'bg-blue-900', icon: '📈' }
+    { id: 3, name: 'Operating Expenses', percentage: 10, color: 'bg-blue-500', icon: '💼' },
+    { id: 4, name: 'Brokerage Fund', percentage: 5, color: 'bg-purple-500', icon: '🏢' },
+    { id: 5, name: 'Home Build/Investment', percentage: 5, color: 'bg-orange-500', icon: '🏠' },
+    { id: 6, name: 'Profit/Savings', percentage: 5, color: 'bg-indigo-600', icon: '📈' }
   ]);
   
   const [editingAllocations, setEditingAllocations] = useState(false);
@@ -74,6 +80,32 @@ export default function EarnedCalculator() {
   // Calculate net commission based on split type
   const calculateNet = (gross, config) => {
     const grossAmount = parseFloat(gross) || 0;
+    
+    // Calculate referral fee OUT first (reduces gross before split)
+    let grossAfterReferralOut = grossAmount;
+    let referralFeeOutAmount = 0;
+    if (config.referralFeeOut && parseFloat(config.referralFeeOut) > 0) {
+      if (config.referralFeeOutType === 'percent') {
+        referralFeeOutAmount = grossAmount * (parseFloat(config.referralFeeOut) / 100);
+      } else {
+        referralFeeOutAmount = parseFloat(config.referralFeeOut);
+      }
+      grossAfterReferralOut = grossAmount - referralFeeOutAmount;
+    }
+    
+    // Calculate referral fee IN (this IS your commission if you referred the deal out)
+    let referralFeeInAmount = 0;
+    if (config.referralFeeIn && parseFloat(config.referralFeeIn) > 0) {
+      if (config.referralFeeInType === 'percent') {
+        referralFeeInAmount = grossAmount * (parseFloat(config.referralFeeIn) / 100);
+      } else {
+        referralFeeInAmount = parseFloat(config.referralFeeIn);
+      }
+    }
+    
+    // If this is a referral IN deal, that's your portion (still subject to broker split)
+    const workingGross = referralFeeInAmount > 0 ? referralFeeInAmount : grossAfterReferralOut;
+    
     let agentPortion = 0;
     let brokerPortion = 0;
     
@@ -81,33 +113,33 @@ export default function EarnedCalculator() {
     switch(config.splitType) {
       case 'percentage':
         const splitPercent = parseFloat(config.brokerSplit) / 100;
-        agentPortion = grossAmount * splitPercent;
-        brokerPortion = grossAmount - agentPortion;
+        agentPortion = workingGross * splitPercent;
+        brokerPortion = workingGross - agentPortion;
         break;
         
       case 'dollar':
         const dollarAmount = parseFloat(config.brokerDollarAmount) || 0;
-        brokerPortion = Math.min(dollarAmount, grossAmount);
-        agentPortion = grossAmount - brokerPortion;
+        brokerPortion = Math.min(dollarAmount, workingGross);
+        agentPortion = workingGross - brokerPortion;
         break;
         
       case 'cap':
         // For single transaction, assume pre-cap (actual cap tracking is in projections)
         const preSplitPercent = parseFloat(config.capPreSplit) / 100;
-        agentPortion = grossAmount * preSplitPercent;
-        brokerPortion = grossAmount - agentPortion;
+        agentPortion = workingGross * preSplitPercent;
+        brokerPortion = workingGross - agentPortion;
         break;
         
       case 'tiered':
         // For single transaction, use first tier
         const firstTierSplit = parseFloat(config.tiers[0].split) / 100;
-        agentPortion = grossAmount * firstTierSplit;
-        brokerPortion = grossAmount - agentPortion;
+        agentPortion = workingGross * firstTierSplit;
+        brokerPortion = workingGross - agentPortion;
         break;
         
       default:
-        agentPortion = grossAmount * 0.7;
-        brokerPortion = grossAmount * 0.3;
+        agentPortion = workingGross * 0.7;
+        brokerPortion = workingGross * 0.3;
     }
     
     // Calculate transaction fee
@@ -130,6 +162,9 @@ export default function EarnedCalculator() {
     
     return {
       gross: grossAmount,
+      referralFeeOut: referralFeeOutAmount,
+      referralFeeIn: referralFeeInAmount,
+      grossAfterReferralOut: grossAfterReferralOut,
       agentPortion,
       brokerPortion,
       transactionFee: transactionFeeAmount,
@@ -159,7 +194,11 @@ export default function EarnedCalculator() {
     transFee: transactionFee,
     transFeeType: transactionFeeType,
     otherFees: otherFees,
-    otherFeesType: otherFeesType
+    otherFeesType: otherFeesType,
+    referralFeeOut: referralFeeOut,
+    referralFeeOutType: referralFeeOutType,
+    referralFeeIn: referralFeeIn,
+    referralFeeInType: referralFeeInType
   };
 
   const commission = calculateNet(grossCommission, currentConfig);
@@ -191,7 +230,11 @@ export default function EarnedCalculator() {
       transFee: transactionFee,
       transFeeType: transactionFeeType,
       otherFees: otherFees,
-      otherFeesType: otherFeesType
+      otherFeesType: otherFeesType,
+      referralFeeOut: referralFeeOut,
+      referralFeeOutType: referralFeeOutType,
+      referralFeeIn: referralFeeIn,
+      referralFeeInType: referralFeeInType
     };
     
     setProfiles([...profiles, newProfile]);
@@ -212,6 +255,10 @@ export default function EarnedCalculator() {
     setTransactionFeeType(profile.transFeeType);
     setOtherFees(profile.otherFees);
     setOtherFeesType(profile.otherFeesType);
+    setReferralFeeOut(profile.referralFeeOut || '0');
+    setReferralFeeOutType(profile.referralFeeOutType || 'percent');
+    setReferralFeeIn(profile.referralFeeIn || '0');
+    setReferralFeeInType(profile.referralFeeInType || 'percent');
   };
 
   // Delete profile
@@ -358,6 +405,14 @@ export default function EarnedCalculator() {
             setOtherFees={setOtherFees}
             otherFeesType={otherFeesType}
             setOtherFeesType={setOtherFeesType}
+            referralFeeOut={referralFeeOut}
+            setReferralFeeOut={setReferralFeeOut}
+            referralFeeOutType={referralFeeOutType}
+            setReferralFeeOutType={setReferralFeeOutType}
+            referralFeeIn={referralFeeIn}
+            setReferralFeeIn={setReferralFeeIn}
+            referralFeeInType={referralFeeInType}
+            setReferralFeeInType={setReferralFeeInType}
             commission={commission}
             breakdown={breakdown}
             allocations={allocations}
@@ -434,6 +489,10 @@ function CalculatorView({
   transactionFeeType, setTransactionFeeType,
   otherFees, setOtherFees,
   otherFeesType, setOtherFeesType,
+  referralFeeOut, setReferralFeeOut,
+  referralFeeOutType, setReferralFeeOutType,
+  referralFeeIn, setReferralFeeIn,
+  referralFeeInType, setReferralFeeInType,
   commission, breakdown, allocations,
   editingAllocations, setEditingAllocations,
   updateAllocationPercentage, updateAllocationName,
@@ -717,7 +776,7 @@ function CalculatorView({
         </div>
 
         {/* Other Fees */}
-        <div className="mb-6">
+        <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Other Fees (E&O, Tech, etc.)
           </label>
@@ -746,10 +805,70 @@ function CalculatorView({
           </div>
         </div>
 
+        {/* Referral Fee OUT */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Referral Fee OUT (paid to referring agent)
+          </label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              {referralFeeOutType === 'flat' && (
+                <DollarSign className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+              )}
+              <input
+                type="number"
+                value={referralFeeOut}
+                onChange={(e) => setReferralFeeOut(e.target.value)}
+                placeholder={referralFeeOutType === 'flat' ? '0' : '25'}
+                className={`w-full ${referralFeeOutType === 'flat' ? 'pl-10' : 'pl-4'} pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent`}
+              />
+              {referralFeeOutType === 'percent' && (
+                <span className="absolute right-3 top-3 text-gray-400">%</span>
+              )}
+            </div>
+            <button
+              onClick={() => setReferralFeeOutType(referralFeeOutType === 'flat' ? 'percent' : 'flat')}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
+            >
+              {referralFeeOutType === 'flat' ? '$' : '%'}
+            </button>
+          </div>
+        </div>
+
+        {/* Referral Fee IN */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Referral Fee IN (received when you refer out)
+          </label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              {referralFeeInType === 'flat' && (
+                <DollarSign className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+              )}
+              <input
+                type="number"
+                value={referralFeeIn}
+                onChange={(e) => setReferralFeeIn(e.target.value)}
+                placeholder={referralFeeInType === 'flat' ? '0' : '25'}
+                className={`w-full ${referralFeeInType === 'flat' ? 'pl-10' : 'pl-4'} pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-transparent`}
+              />
+              {referralFeeInType === 'percent' && (
+                <span className="absolute right-3 top-3 text-gray-400">%</span>
+              )}
+            </div>
+            <button
+              onClick={() => setReferralFeeInType(referralFeeInType === 'flat' ? 'percent' : 'flat')}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors"
+            >
+              {referralFeeInType === 'flat' ? '$' : '%'}
+            </button>
+          </div>
+        </div>
+
         {/* Net Commission Display */}
-        <div className="bg-gradient-to-br from-blue-90 to-blue-70 rounded-xl p-5 border-2 border-blue-200">
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border-2 border-blue-200">
           <div className="text-sm text-gray-600 mb-1">Your Net Commission</div>
-          <div className="text-4xl font-bold text-blue-900 mb-4">
+          <div className="text-4xl font-bold text-emerald-600 mb-4">
             {formatCurrency(commission.net)}
           </div>
           <div className="text-xs text-gray-600 space-y-2 border-t border-blue-200 pt-3">
@@ -757,6 +876,18 @@ function CalculatorView({
               <span>Gross commission:</span>
               <span className="font-semibold">{formatCurrency(commission.gross)}</span>
             </div>
+            {commission.referralFeeOut > 0 && (
+              <div className="flex justify-between text-red-600">
+                <span>- Referral fee OUT:</span>
+                <span className="font-semibold">{formatCurrency(commission.referralFeeOut)}</span>
+              </div>
+            )}
+            {commission.referralFeeIn > 0 && (
+              <div className="flex justify-between text-emerald-600">
+                <span>+ Referral fee IN:</span>
+                <span className="font-semibold">{formatCurrency(commission.referralFeeIn)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span>Your portion:</span>
               <span className="font-semibold">{formatCurrency(commission.agentPortion)}</span>
@@ -775,7 +906,7 @@ function CalculatorView({
             </div>
             <div className="flex justify-between font-bold pt-2 border-t border-blue-200 text-base">
               <span>Net to allocate:</span>
-              <span className="text-blue-900">{formatCurrency(commission.net)}</span>
+              <span className="text-emerald-600">{formatCurrency(commission.net)}</span>
             </div>
           </div>
         </div>
